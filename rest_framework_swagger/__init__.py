@@ -1,4 +1,5 @@
-VERSION = '0.3.4'
+VERSION = '0.3.5'
+
 
 DEFAULT_SWAGGER_SETTINGS = {
     'exclude_namespaces': [],
@@ -14,6 +15,7 @@ DEFAULT_SWAGGER_SETTINGS = {
     'resource_access_handler': None,
     'template_path': 'rest_framework_swagger/index.html',
     'doc_expansion': 'none',
+    'version_resolver': 'rest_framework_swagger.fake_version_resolver',
 }
 
 try:
@@ -37,6 +39,17 @@ try:
                           'SWAGGER_SETTINGS',
                           DEFAULT_SWAGGER_SETTINGS))
     setting_changed.connect(reload_settings)
-
+    
 except:
     SWAGGER_SETTINGS = DEFAULT_SWAGGER_SETTINGS
+
+class FakeVersionResolver(object):
+    @staticmethod
+    def parse_version_string(value):
+        return 1, 0
+
+    @property
+    def available_versions(self):
+        return [(1, 0)]
+
+fake_version_resolver = FakeVersionResolver()

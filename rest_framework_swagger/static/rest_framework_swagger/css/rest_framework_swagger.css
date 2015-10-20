@@ -1,11 +1,20 @@
 #django-rest-swagger {
-    background: #547f00; 
-    color: #eee; 
-    text-align:right; 
-    padding: 7px 0; 
-    font-size: 0.8em
+    background: #547f00;
+    color: #375a6a;
+    text-align:left;
+    padding: 7px 0;
+    font-size: 1em;
 }
 #django-rest-swagger a {
-    color: #fff;
+    color: #0052cc;
     text-decoration: none;
+}
+
+#django-rest-swagger span {
+    color: #375a6a;
+    font-weight: bold;
+}
+
+.footer {
+    display: none;
 }

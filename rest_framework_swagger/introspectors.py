@@ -2,33 +2,37 @@
 
 """Handles the instrospection of REST Framework Views and ViewSets."""
 
+import importlib
 import inspect
 import itertools
 import re
-import yaml
-import importlib
-
-from .compat import OrderedDict, strip_tags, get_pagination_attribures
 from abc import ABCMeta, abstractmethod
 
-from django.http import HttpRequest
-from django.contrib.admindocs.utils import trim_docstring
-from django.utils.encoding import smart_text
+import yaml
 
 import rest_framework
-from rest_framework import viewsets
+from django.contrib.admindocs.utils import trim_docstring
+from django.http import HttpRequest
+from django.utils import six
+from django.utils.encoding import smart_text
+from rest_framework import fields, viewsets
 from rest_framework.compat import apply_markdown
+from rest_framework.serializers import ListSerializer
+from rest_framework.utils import formatting
+
+from .compat import OrderedDict, get_pagination_attribures, strip_tags
+from .public_api_introspectors import get_class_form_args
+
 try:
     from rest_framework.fields import CurrentUserDefault
 except ImportError:
     # FIXME once we drop support of DRF 2.x .
     CurrentUserDefault = None
-from rest_framework.utils import formatting
-from django.utils import six
 try:
     import django_filters
 except ImportError:
     django_filters = None
+
 
 
 def get_view_description(view_cls, html=False, docstring=None):
@@ -98,9 +102,43 @@ class IntrospectorHelper(object):
         return "\n".join(split_lines)
 
     @staticmethod
+    def _flatten_metadata(data):
+        """
+        Metadata dictionary can have `extends` field,
+        so it inherits all the data of its parent.
+        """
+        extends = data.pop('extends', None)
+
+        if not extends:
+            return data
+
+        extends = IntrospectorHelper._flatten_metadata(extends)
+
+        data.setdefault('fields', {})
+
+        for field_name, value in extends.get('fields', {}).items():
+            data['fields'].setdefault(field_name, value)
+
+        return data
+
+    @staticmethod
+    def get_metadata(serializer):
+        if isinstance(serializer, ListSerializer):
+            serializer = serializer.child
+        meta = getattr(serializer, '_swagger_meta', {})
+
+        return IntrospectorHelper._flatten_metadata(meta)
+
+    @staticmethod
     def get_serializer_name(serializer):
         if serializer is None:
             return None
+
+        meta = IntrospectorHelper.get_metadata(serializer)
+
+        if 'name' in meta:
+            return '{%s}' % meta['name']
+
         if rest_framework.VERSION >= '3.0.0':
             from rest_framework.serializers import ListSerializer
             assert serializer != ListSerializer, "uh oh, what now?"
@@ -109,6 +147,7 @@ class IntrospectorHelper(object):
 
         if inspect.isclass(serializer):
             return serializer.__name__
+        meta = IntrospectorHelper.get_metadata(serializer)
 
         return serializer.__class__.__name__
 
@@ -132,11 +171,12 @@ class IntrospectorHelper(object):
 class BaseViewIntrospector(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, callback, path, pattern, user):
+    def __init__(self, callback, path, pattern, user, version=None):
         self.callback = callback
         self.path = path
         self.pattern = pattern
         self.user = user
+        self.version = version
 
     def get_yaml_parser(self):
         parser = YAMLDocstringParser(self)
@@ -174,12 +214,13 @@ class BaseMethodIntrospector(object):
         'boolean': ['boolean'],
     }
 
-    def __init__(self, view_introspector, method):
+    def __init__(self, view_introspector, method, version=None):
         self.method = method
         self.parent = view_introspector
         self.callback = view_introspector.callback
         self.path = view_introspector.path
         self.user = view_introspector.user
+        self.version = version
 
     def get_module(self):
         return self.callback.__module__
@@ -220,7 +261,8 @@ class BaseMethodIntrospector(object):
                 try:
                     serializer_class = view.get_serializer_class()
                 except AssertionError as e:
-                    if "should either include a `serializer_class` attribute, or override the `get_serializer_class()` method." in str(e):  # noqa
+                    if ("should either include a `serializer_class` attribute, or override the `get_serializer_class()` method." in str(e) or
+                        '`serializer_class` is not set' in str(e)):  # noqa
                         serializer_class = None
                     else:
                         raise
@@ -235,6 +277,7 @@ class BaseMethodIntrospector(object):
         view.request = HttpRequest()
         view.request.user = self.user
         view.request.method = self.method
+        view.request.version = self.version
         return view
 
     def get_serializer_class(self):
@@ -306,7 +349,7 @@ class BaseMethodIntrospector(object):
         params = []
         path_params = self.build_path_parameters()
         body_params = self.build_body_parameters()
-        form_params = self.build_form_parameters()
+        # form_params = self.build_form_parameters()
         query_params = self.build_query_parameters()
         if django_filters is not None:
             query_params.extend(
@@ -315,16 +358,17 @@ class BaseMethodIntrospector(object):
         if path_params:
             params += path_params
 
-        if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
-            params += form_params
-
-            if not form_params and body_params is not None:
-                params.append(body_params)
+        # We never use serializers to directly modify data in Public-API
+        # if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
+        #     params += form_params
+        #
+        #     if not form_params and body_params is not None:
+        #         params.append(body_params)
 
         if query_params:
             params += query_params
 
-        return params
+        return sorted(params, key=lambda x: x.get('name'))
 
     def get_http_method(self):
         return self.method
@@ -392,6 +436,8 @@ class BaseMethodIntrospector(object):
                                'name': param[0].strip(),
                                'description': param[1].strip(),
                                'type': 'string'})
+
+        params += get_class_form_args(self.method, self.callback, self.version)
 
         return params
 
@@ -485,51 +531,31 @@ class BaseMethodIntrospector(object):
         return data
 
 
+DATA_TYPES_MAP = OrderedDict([
+    (fields.BooleanField, ('boolean', 'boolean')),
+    (fields.NullBooleanField, ('boolean', 'boolean')),
+    (fields.ChoiceField, ('choice', 'choice')),
+    (fields.DateField, ('string', 'date')),
+    (fields.DateTimeField, ('string', 'date-time')),
+    (fields.IntegerField, ('integer', 'int64')),
+    (fields.FloatField, ('number', 'float')),
+    (fields.DictField, ('dict', 'dict')),
+    (fields.HiddenField, ('hidden', 'hidden')),
+])
+
+
 def get_data_type(field):
-    # (in swagger 2.0 we might get to use the descriptive types..
-    from rest_framework import fields
-    if isinstance(field, fields.BooleanField):
-        return 'boolean', 'boolean'
-    elif hasattr(fields, 'NullBooleanField') and isinstance(field, fields.NullBooleanField):
-        return 'boolean', 'boolean'
-    # elif isinstance(field, fields.URLField):
-        # return 'string', 'string' #  'url'
-    # elif isinstance(field, fields.SlugField):
-        # return 'string', 'string', # 'slug'
-    elif isinstance(field, fields.ChoiceField):
-        return 'choice', 'choice'
-    # elif isinstance(field, fields.EmailField):
-        # return 'string', 'string' #  'email'
-    # elif isinstance(field, fields.RegexField):
-        # return 'string', 'string' # 'regex'
-    elif isinstance(field, fields.DateField):
-        return 'string', 'date'
-    elif isinstance(field, fields.DateTimeField):
-        return 'string', 'date-time'  # 'datetime'
-    # elif isinstance(field, fields.TimeField):
-        # return 'string', 'string' # 'time'
-    elif isinstance(field, fields.IntegerField):
-        return 'integer', 'int64'  # 'integer'
-    elif isinstance(field, fields.FloatField):
-        return 'number', 'float'  # 'float'
-    # elif isinstance(field, fields.DecimalField):
-        # return 'string', 'string' #'decimal'
-    # elif isinstance(field, fields.ImageField):
-        # return 'string', 'string' # 'image upload'
-    # elif isinstance(field, fields.FileField):
-        # return 'string', 'string' # 'file upload'
-    # elif isinstance(field, fields.CharField):
-        # return 'string', 'string'
-    elif rest_framework.VERSION >= '3.0.0' and isinstance(field, fields.HiddenField):
-        return 'hidden', 'hidden'
-    else:
-        return 'string', 'string'
+    for field_class, repreentation in DATA_TYPES_MAP.items():
+        if isinstance(field, field_class):
+            return repreentation
+
+    return 'string', 'string'
 
 
 class APIViewIntrospector(BaseViewIntrospector):
     def __iter__(self):
         for method in self.methods():
-            yield APIViewMethodIntrospector(self, method)
+            yield APIViewMethodIntrospector(self, method, version=self.version)
 
     def methods(self):
         return self.callback().allowed_methods
@@ -538,7 +564,11 @@ class APIViewIntrospector(BaseViewIntrospector):
 class WrappedAPIViewIntrospector(BaseViewIntrospector):
     def __iter__(self):
         for method in self.methods():
-            yield WrappedAPIViewMethodIntrospector(self, method)
+            yield WrappedAPIViewMethodIntrospector(
+                self,
+                method,
+                version=self.version,
+            )
 
     def methods(self):
         return self.callback().allowed_methods
@@ -596,8 +626,14 @@ class WrappedAPIViewMethodIntrospector(BaseMethodIntrospector):
 class ViewSetIntrospector(BaseViewIntrospector):
     """Handle ViewSet introspection."""
 
-    def __init__(self, callback, path, pattern, user, patterns=None):
-        super(ViewSetIntrospector, self).__init__(callback, path, pattern, user)
+    def __init__(self, callback, path, pattern, user, patterns=None, version=None):
+        super(ViewSetIntrospector, self).__init__(
+            callback,
+            path,
+            pattern,
+            user,
+            version=version,
+        )
         if not issubclass(callback, viewsets.ViewSetMixin):
             raise Exception("wrong callback passed to ViewSetIntrospector")
         self.patterns = patterns or [pattern]
@@ -605,7 +641,12 @@ class ViewSetIntrospector(BaseViewIntrospector):
     def __iter__(self):
         methods = self._resolve_methods()
         for method in methods:
-            yield ViewSetMethodIntrospector(self, methods[method], method)
+            yield ViewSetMethodIntrospector(
+                self,
+                methods[method],
+                method,
+                version=self.version,
+            )
 
     def methods(self):
         stuff = []
@@ -638,9 +679,9 @@ class ViewSetIntrospector(BaseViewIntrospector):
 
 
 class ViewSetMethodIntrospector(BaseMethodIntrospector):
-    def __init__(self, view_introspector, method, http_method):
+    def __init__(self, view_introspector, method, http_method, version=None):
         super(ViewSetMethodIntrospector, self) \
-            .__init__(view_introspector, method)
+            .__init__(view_introspector, method, version=version)
         self.http_method = http_method.upper()
 
     def get_http_method(self):
@@ -665,7 +706,8 @@ class ViewSetMethodIntrospector(BaseMethodIntrospector):
         parameters = super(ViewSetMethodIntrospector, self) \
             .build_query_parameters()
         view = self.create_view()
-        page_size, page_query_param, page_size_query_param = get_pagination_attribures(view)
+        page_size, page_query_param, page_size_query_param = get_pagination_attribures(
+            view)
         if self.method == 'list' and page_size:
             data_type = 'integer'
             if page_query_param:

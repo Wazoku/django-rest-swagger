@@ -1,20 +1,44 @@
-import re
 import os
+import re
 from importlib import import_module
 
 from django.conf import settings
+from django.core.urlresolvers import RegexURLPattern, RegexURLResolver
 from django.utils import six
-from django.core.urlresolvers import RegexURLResolver, RegexURLPattern
-from django.contrib.admindocs.views import simplify_regex
-
 from rest_framework.views import APIView
 
 from .apidocview import APIDocView
 
+# The following simplify_regex is taken from Django 1.10 admindocs
+# https://github.com/django/django/blob/1.10/django/contrib/admindocs/views.py
+named_group_matcher = re.compile(r'\(\?P(<\w+>).+?\)')
+non_named_group_matcher = re.compile(r'\(.*?\)')
+
+
+def simplify_regex(pattern):
+    """
+    Clean up urlpattern regexes into something somewhat readable by Mere Humans:
+    turns something like "^(?P<sport_slug>\w+)/athletes/(?P<athlete_slug>\w+)/$"
+    into "<sport_slug>/athletes/<athlete_slug>/"
+    """
+    # handle named groups first
+    pattern = named_group_matcher.sub(lambda m: m.group(1), pattern)
+
+    # handle non-named groups
+    pattern = non_named_group_matcher.sub("<var>", pattern)
+
+    # clean up any outstanding regex-y characters.
+    pattern = pattern.replace('^', '').replace('$', '').replace(
+        '?', '').replace('//', '/').replace('\\', '')
+    if not pattern.startswith('/'):
+        pattern = '/' + pattern
+    return pattern
+
 
 class UrlParser(object):
 
-    def get_apis(self, patterns=None, urlconf=None, filter_path=None, exclude_namespaces=[]):
+    def get_apis(self, patterns=None, urlconf=None, filter_path=None,
+                 exclude_namespaces=[], version=None):
         """
         Returns all the DRF APIViews found in the project URLs
 
@@ -36,7 +60,11 @@ class UrlParser(object):
             filter_path=filter_path,
             exclude_namespaces=exclude_namespaces,
         )
-        if filter_path is not None:
+
+        if filter_path is None and version:
+            filter_path = 'api/v%s.%s/' % version
+
+        if filter_path:
             return self.get_filtered_apis(apis, filter_path)
 
         return apis
@@ -84,7 +112,7 @@ class UrlParser(object):
         return list(filtered_paths)
 
     def __get_base_path__(self, root_paths):
-        base_path = os.path.commonprefix(root_paths)
+        base_path = os.path.commonprefix(list(root_paths))
         slash_index = base_path.rfind('/') + 1
         base_path = base_path[:slash_index]
 
@@ -106,7 +134,12 @@ class UrlParser(object):
         if callback is None or self.__exclude_router_api_root__(callback):
             return
 
-        path = simplify_regex(prefix + pattern.regex.pattern)
+        # Ugly hack to get version from regex
+        regex_path = prefix + pattern.regex.pattern
+        regex_path = regex_path.replace(r'(\.0)?', r'\.0')
+        regex_path = re.sub(r'v\(\?P\<version\>(\d+\\\.\d+)\)', r'v\1', regex_path)
+
+        path = simplify_regex(regex_path)
 
         if filter_path is not None:
             if re.match('^/?%s(/.*)?$' % re.escape(filter_path), path) is None:
@@ -123,7 +156,8 @@ class UrlParser(object):
             'callback': callback,
         }
 
-    def __flatten_patterns_tree__(self, patterns, prefix='', filter_path=None, exclude_namespaces=[]):
+    def __flatten_patterns_tree__(self, patterns, prefix='', filter_path=None,
+                                  exclude_namespaces=[]):
         """
         Uses recursion to flatten url tree.
 
@@ -134,7 +168,11 @@ class UrlParser(object):
 
         for pattern in patterns:
             if isinstance(pattern, RegexURLPattern):
-                endpoint_data = self.__assemble_endpoint_data__(pattern, prefix, filter_path=filter_path)
+                endpoint_data = self.__assemble_endpoint_data__(
+                    pattern,
+                    prefix,
+                    filter_path=filter_path,
+                )
 
                 if endpoint_data is None:
                     continue

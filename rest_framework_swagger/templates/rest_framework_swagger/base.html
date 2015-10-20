@@ -1,10 +1,11 @@
 {% load staticfiles %}
 {% spaceless %}
+
 <!DOCTYPE html>
 <html>
     <head>
         <meta name="viewport" content="width=device-width initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
-        <title>{% block title %}Swagger UI{% endblock %}</title>
+        <title>{% block title %}Wazoku Public API{% endblock %}</title>
         {% block style %}
             <link href="//fonts.googleapis.com/css?family=Droid+Sans:400,700" rel="stylesheet" type="text/css"/>
             <link href="{% static 'rest_framework_swagger/css/highlight.default.css' %}" media="screen" rel="stylesheet" type="text/css"/>
@@ -16,18 +17,15 @@
     <body>
         {% block body %}
         {% block header %}
-            <div id="header">
+            <div id="header" style="background-color: #375a6a;">
                 <div class="swagger-ui-wrap">
                     {% block branding %}
-                        <a id="logo" href="http://swagger.wordnik.com">swagger</a>
+                        <a href="http://wazoku.com"><img src="{{STATIC_URL}}public_api/images/logo_small.png"></a>
                     {% endblock %}
                     {% block api_selector %}
-                        <form id="api_selector">
-                            <div class="input icon-btn">
-                                <img id="show-wordnik-dev-icon" src="{% static 'rest_framework_swagger/images/wordnik_api.png' %}" title="Show Wordnik Developer Apis">
-                            </div>
-                            <div class="input"><input placeholder="http://example.com/api" id="input_baseUrl" name="baseUrl" type="text"/></div>
-                            <div class="input"><input placeholder="api_key" id="input_apiKey" name="apiKey" type="text"/></div>
+                        <form id="api_selector" style="padding-top:20px;">
+                            <div class="input" style="display: none;"><input placeholder="http://example.com/api" id="input_baseUrl" name="baseUrl" type="text"/></div>
+                            <div class="input"><input placeholder="customer_token:user_id" id="input_apiKey" name="apiKey" type="text"/></div>
                             <div class="input"><a id="explore" href="#">Explore</a></div>
                         </form>
                     {% endblock %}
@@ -36,9 +34,20 @@
         {% endblock %}
 
         {% block django_rest_swagger %}
-            <div id="django-rest-swagger">
+            <div id="django-rest-swagger" style="background-color: #9FD1D4;">
                 <div class="swagger-ui-wrap">
-                    <a href="https://github.com/marcgibbons/django-rest-swagger/">Django REST Swagger</a>
+                    Versions:
+                    {% for ver in available_versions %}
+                        {% if ver.is_current %}
+                            <span>{{ver.version}}</span>
+                        {% else %}
+                            <a href="{{ver.link}}">{{ver.version}}</a>
+                        {% endif %}
+                        {% if not forloop.last %}
+                            |
+                        {% endif %}
+
+                    {% endfor %}
                 </div>
             </div>
         {% endblock %}
@@ -61,6 +70,7 @@
         <script src="{% static 'rest_framework_swagger/lib/swagger.js' %}" type="text/javascript"></script>
         <script src="{% static 'rest_framework_swagger/swagger-ui.min.js' %}" type="text/javascript"></script>
         <script src="{% static 'rest_framework_swagger/lib/highlight.8.0.pack.js' %}" type="text/javascript"></script>
+
         <script type="text/javascript">
             $(function () {
                 window.swaggerUi = new SwaggerUi({

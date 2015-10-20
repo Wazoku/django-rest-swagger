@@ -1,5 +1,7 @@
 """Generates API documentation by introspection."""
 import importlib
+from copy import copy
+
 import rest_framework
 from rest_framework import viewsets
 from rest_framework.serializers import BaseSerializer
@@ -27,10 +29,12 @@ class DocumentationGenerator(object):
     # Response classes defined in docstrings
     explicit_response_types = dict()
 
-    def __init__(self, for_user=None):
+    def __init__(self, for_user=None, version=None):
 
         # unauthenticated user is expected to be in the form 'module.submodule.Class' if a value is present
         unauthenticated_user = SWAGGER_SETTINGS.get('unauthenticated_user')
+
+        self.version = version
 
         # attempt to load unathenticated_user class from settings if a user is not supplied
         if not for_user and unauthenticated_user:
@@ -59,13 +63,32 @@ class DocumentationGenerator(object):
         pattern = api['pattern']
         callback = api['callback']
         if callback.__module__ == 'rest_framework.decorators':
-            return WrappedAPIViewIntrospector(callback, path, pattern, self.user)
+            return WrappedAPIViewIntrospector(
+                callback,
+                path,
+                pattern,
+                self.user,
+                version=self.version,
+            )
         elif issubclass(callback, viewsets.ViewSetMixin):
             patterns = [a['pattern'] for a in apis
                         if a['callback'] == callback]
-            return ViewSetIntrospector(callback, path, pattern, self.user, patterns=patterns)
+            return ViewSetIntrospector(
+                callback,
+                path,
+                pattern,
+                self.user,
+                patterns=patterns,
+                version=self.version,
+            )
         else:
-            return APIViewIntrospector(callback, path, pattern, self.user)
+            return APIViewIntrospector(
+                callback,
+                path,
+                pattern,
+                self.user,
+                version=self.version,
+            )
 
     def get_operations(self, api, apis=None):
         """
@@ -81,6 +104,20 @@ class DocumentationGenerator(object):
             if not isinstance(method_introspector, BaseMethodIntrospector) or \
                     method_introspector.get_http_method() == "OPTIONS":
                 continue  # No one cares. I impose JSON.
+
+            version_checker = getattr(
+                method_introspector.callback,
+                'is_version_allowed',
+            )
+            if (
+                version_checker
+                and not version_checker(
+                    method_introspector.method,
+                    method_introspector.version,
+                )
+            ):
+                # This version is not available for this HTTP method
+                continue
 
             doc_parser = method_introspector.get_yaml_parser()
 
@@ -287,6 +324,9 @@ class DocumentationGenerator(object):
         if serializer is None:
             return
 
+        meta = IntrospectorHelper.get_metadata(serializer)
+        fields_meta = copy(meta.get('fields', {}))
+
         if hasattr(serializer, '__call__'):
             fields = serializer().get_fields()
         else:
@@ -308,16 +348,24 @@ class DocumentationGenerator(object):
             if getattr(field, 'required', False):
                 data['required'].append(name)
 
-            data_type, data_format = get_data_type(field) or ('string', 'string')
+            field_meta = fields_meta.pop(name, {})
+
+            if 'type' in field_meta:
+                data_type, data_format = field_meta['type']
+            else:
+                data_type, data_format = get_data_type(field)
+
             if data_type == 'hidden':
                 continue
 
-            # guess format
-            # data_format = 'string'
-            # if data_type in BaseMethodIntrospector.PRIMITIVES:
-                # data_format = BaseMethodIntrospector.PRIMITIVES.get(data_type)[0]
-
             description = getattr(field, 'help_text', '')
+
+            if getattr(field, 'is_includable', False):
+                if description is None:
+                    description = ''
+
+                description = '<font color="#600">[includable]</font> ' + description
+
             if not description or description.strip() == '':
                 description = None
             f = {
@@ -381,5 +429,10 @@ class DocumentationGenerator(object):
 
             # memorize discovered field
             data['fields'][name] = f
+
+        if fields_meta:
+            raise ValueError(
+                'Unexpected fields in Swagger metadata: %s' % ','.join(fields_meta.keys()),
+            )
 
         return data

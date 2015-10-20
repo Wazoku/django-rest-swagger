@@ -105,7 +105,7 @@ class HTTPSTest(TestCase):
     def test_swagger_view(self):
         urls = import_module(settings.ROOT_URLCONF)
         urls.urlpatterns = self.url_patterns
-        response = self.client.get("/swagger/",
+        response = self.client.get("/swagger/v1/",
                                    **{'wsgi.url_scheme': 'https'})
         content = response.content.decode()
         self.assertIn("url: 'https", content)
@@ -114,7 +114,7 @@ class HTTPSTest(TestCase):
         from django.utils.six.moves.urllib import parse
         urls = import_module(settings.ROOT_URLCONF)
         urls.urlpatterns = self.url_patterns
-        response = self.client.get("/swagger/api-docs/",
+        response = self.client.get("/swagger/api-docs/v1/",
                                    **{'wsgi.url_scheme': 'https',
                                       'SERVER_PORT': 443})
         json = parse_json(response)
@@ -150,7 +150,7 @@ class OverrideBasePathTest(TestCase):
         from django.utils.six.moves.urllib import parse
         urls = import_module(settings.ROOT_URLCONF)
         urls.urlpatterns = self.url_patterns
-        response = self.client.get("/swagger/api-docs/")
+        response = self.client.get("/swagger/api-docs/v1/")
         json = parse_json(response)
         base_url = parse.urlparse(json['basePath'])
         self.assertEqual('http', base_url.scheme)
@@ -868,6 +868,108 @@ class IntrospectorHelperTest(TestCase):
         self.assertEqual(
             "CommentSerializer",
             IntrospectorHelper.get_serializer_name(comments))
+
+    def test_metadata_flatten(self):
+
+        def single_case(data, expected_value):
+            flatten = IntrospectorHelper._flatten_metadata(data)
+
+            self.assertEqual(
+                data,
+                expected_value,
+                [data, flatten, expected_value],
+            )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        # Test that we do not delete fields.
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {},
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        # Test we do not override field
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {'a': 'other_data'},
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {'d': 'e'},
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b', 'd': 'e'},
+            },
+        )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {'d': 'e'},
+                    'extends': {
+                        'name': 'third_name',
+                        'fields': {'f': 'g'},
+                    }
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b', 'd': 'e', 'f': 'g'},
+            },
+        )
 
 
 class ViewSetTestIntrospectorTest(TestCase):
@@ -2784,11 +2886,11 @@ if platform.python_version_tuple()[:2] != ('3', '2'):
             urls.urlpatterns = self.url_patterns
 
             validator = self.get_validator("resourceListing")
-            response = self.client.get("/swagger/api-docs/")
+            response = self.client.get("/swagger/api-docs/v1/")
             json = parse_json(response)
             validator.validate(json)
             validator = self.get_validator("apiDeclaration")
-            response = self.client.get("/swagger/api-docs/a-view")
+            response = self.client.get("/swagger/api-docs/v1/a-view")
             json = parse_json(response)
             self.assertIn("KitchenSinkSerializer", json['models'])
             validator.validate(json)
@@ -2843,11 +2945,11 @@ if platform.python_version_tuple()[:2] != ('3', '2'):
             urls.urlpatterns = self.url_patterns
 
             validator = self.get_validator("resourceListing")
-            response = self.client.get("/swagger/api-docs/")
+            response = self.client.get("/swagger/api-docs/v1/")
             json = parse_json(response)
             validator.validate(json)
             validator = self.get_validator("apiDeclaration")
-            response = self.client.get("/swagger/api-docs/a-view")
+            response = self.client.get("/swagger/api-docs/v1/a-view")
             json = parse_json(response)
             validator.validate(json)
             self.assertEqual('object', json['apis'][0]['operations'][0]['type'])
@@ -2891,11 +2993,11 @@ if platform.python_version_tuple()[:2] != ('3', '2'):
             urls.urlpatterns = self.url_patterns
 
             validator = self.get_validator("resourceListing")
-            response = self.client.get("/swagger/api-docs/")
+            response = self.client.get("/swagger/api-docs/v1/")
             json = parse_json(response)
             validator.validate(json)
             validator = self.get_validator("apiDeclaration")
-            response = self.client.get("/swagger/api-docs/a-view")
+            response = self.client.get("/swagger/api-docs/v1/a-view")
             json = parse_json(response)
             validator.validate(json)
 
@@ -2916,10 +3018,10 @@ if platform.python_version_tuple()[:2] != ('3', '2'):
             urls.urlpatterns = self.url_patterns
 
             validator = self.get_validator("resourceListing")
-            response = self.client.get("/swagger/api-docs/")
+            response = self.client.get("/swagger/api-docs/v1/")
             json = parse_json(response)
             validator.validate(json)
             validator = self.get_validator("apiDeclaration")
-            response = self.client.get("/swagger/api-docs/a-view")
+            response = self.client.get("/swagger/api-docs/v1/a-view")
             json = parse_json(response)
             validator.validate(json)
