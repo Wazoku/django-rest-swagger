@@ -7,6 +7,7 @@ import itertools
 import re
 import yaml
 import importlib
+from collections import OrderedDict
 
 from .compat import OrderedDict, strip_tags, get_pagination_attribures
 from abc import ABCMeta, abstractmethod
@@ -16,8 +17,9 @@ from django.contrib.admindocs.utils import trim_docstring
 from django.utils.encoding import smart_text
 
 import rest_framework
-from rest_framework import viewsets
+from rest_framework import viewsets, fields
 from rest_framework.compat import apply_markdown
+from rest_framework.serializers import ListSerializer
 try:
     from rest_framework.fields import CurrentUserDefault
 except ImportError:
@@ -98,9 +100,45 @@ class IntrospectorHelper(object):
         return "\n".join(split_lines)
 
     @staticmethod
+    def _flatten_metadata(data):
+        """
+        Metadata dictionary can have `extends` field,
+        so it inherits all the data of its parent.
+        """
+        extends = data.pop('extends', None)
+
+        if not extends:
+            return data
+
+        extends = IntrospectorHelper._flatten_metadata(extends)
+
+        data.setdefault('fields', {})
+
+        for field_name, value in extends.get('fields', {}).iteritems():
+            data['fields'].setdefault(field_name, value)
+
+        return data
+
+
+
+    @staticmethod
+    def get_metadata(serializer):
+        if isinstance(serializer, ListSerializer):
+            serializer = serializer.child
+        meta = getattr(serializer, '_swagger_meta', {})
+
+        return IntrospectorHelper._flatten_metadata(meta)
+
+    @staticmethod
     def get_serializer_name(serializer):
         if serializer is None:
             return None
+
+        meta = IntrospectorHelper.get_metadata(serializer)
+
+        if 'name' in meta:
+            return '{%s}' % meta['name']
+
         if rest_framework.VERSION >= '3.0.0':
             from rest_framework.serializers import ListSerializer
             assert serializer != ListSerializer, "uh oh, what now?"
@@ -109,8 +147,10 @@ class IntrospectorHelper(object):
 
         if inspect.isclass(serializer):
             return serializer.__name__
+        meta = IntrospectorHelper.get_metadata(serializer)
 
         return serializer.__class__.__name__
+
 
     @staticmethod
     def get_summary(callback, docstring=None):
@@ -485,45 +525,25 @@ class BaseMethodIntrospector(object):
         return data
 
 
+DATA_TYPES_MAP = OrderedDict([
+    (fields.BooleanField, ('boolean', 'boolean')),
+    (fields.NullBooleanField, ('boolean', 'boolean')),
+    (fields.ChoiceField, ('choice', 'choice')),
+    (fields.DateField, ('string', 'date')),
+    (fields.DateTimeField, ('string', 'date-time')),
+    (fields.IntegerField, ('integer', 'int64')),
+    (fields.FloatField, ('number', 'float')),
+    (fields.DictField, ('dict', 'dict')),
+    (fields.HiddenField, ('hidden', 'hidden')),
+])
+
+
 def get_data_type(field):
-    # (in swagger 2.0 we might get to use the descriptive types..
-    from rest_framework import fields
-    if isinstance(field, fields.BooleanField):
-        return 'boolean', 'boolean'
-    elif hasattr(fields, 'NullBooleanField') and isinstance(field, fields.NullBooleanField):
-        return 'boolean', 'boolean'
-    # elif isinstance(field, fields.URLField):
-        # return 'string', 'string' #  'url'
-    # elif isinstance(field, fields.SlugField):
-        # return 'string', 'string', # 'slug'
-    elif isinstance(field, fields.ChoiceField):
-        return 'choice', 'choice'
-    # elif isinstance(field, fields.EmailField):
-        # return 'string', 'string' #  'email'
-    # elif isinstance(field, fields.RegexField):
-        # return 'string', 'string' # 'regex'
-    elif isinstance(field, fields.DateField):
-        return 'string', 'date'
-    elif isinstance(field, fields.DateTimeField):
-        return 'string', 'date-time'  # 'datetime'
-    # elif isinstance(field, fields.TimeField):
-        # return 'string', 'string' # 'time'
-    elif isinstance(field, fields.IntegerField):
-        return 'integer', 'int64'  # 'integer'
-    elif isinstance(field, fields.FloatField):
-        return 'number', 'float'  # 'float'
-    # elif isinstance(field, fields.DecimalField):
-        # return 'string', 'string' #'decimal'
-    # elif isinstance(field, fields.ImageField):
-        # return 'string', 'string' # 'image upload'
-    # elif isinstance(field, fields.FileField):
-        # return 'string', 'string' # 'file upload'
-    # elif isinstance(field, fields.CharField):
-        # return 'string', 'string'
-    elif rest_framework.VERSION >= '3.0.0' and isinstance(field, fields.HiddenField):
-        return 'hidden', 'hidden'
-    else:
-        return 'string', 'string'
+    for field_class, repreentation in DATA_TYPES_MAP.iteritems():
+        if isinstance(field, field_class):
+            return repreentation
+
+    return 'string', 'string'
 
 
 class APIViewIntrospector(BaseViewIntrospector):

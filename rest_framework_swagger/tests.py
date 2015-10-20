@@ -869,6 +869,108 @@ class IntrospectorHelperTest(TestCase):
             "CommentSerializer",
             IntrospectorHelper.get_serializer_name(comments))
 
+    def test_metadata_flatten(self):
+
+        def single_case(data, expected_value):
+            flatten = IntrospectorHelper._flatten_metadata(data)
+
+            self.assertEqual(
+                data,
+                expected_value,
+                [data, flatten, expected_value],
+            )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        # Test that we do not delete fields.
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {},
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        # Test we do not override field
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {'a': 'other_data'},
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+            },
+        )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {'d': 'e'},
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b', 'd': 'e'},
+            },
+        )
+
+        single_case(
+            {
+                'name': 'name',
+                'fields': {'a': 'b'},
+                'extends': {
+                    'name': 'other_name',
+                    'fields': {'d': 'e'},
+                    'extends': {
+                        'name': 'third_name',
+                        'fields': {'f': 'g'},
+                    }
+                },
+            },
+            {
+                'name': 'name',
+                'fields': {'a': 'b', 'd': 'e', 'f': 'g'},
+            },
+        )
+
 
 class ViewSetTestIntrospectorTest(TestCase):
     def test_get_allowed_methods_list(self):
