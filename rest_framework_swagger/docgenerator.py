@@ -1,5 +1,7 @@
 """Generates API documentation by introspection."""
 import importlib
+from copy import copy
+
 import rest_framework
 from rest_framework import viewsets
 from rest_framework.serializers import BaseSerializer
@@ -287,6 +289,9 @@ class DocumentationGenerator(object):
         if serializer is None:
             return
 
+        meta = IntrospectorHelper.get_metadata(serializer)
+        fields_meta = copy(meta.get('fields', {}))
+
         if hasattr(serializer, '__call__'):
             fields = serializer().get_fields()
         else:
@@ -308,14 +313,15 @@ class DocumentationGenerator(object):
             if getattr(field, 'required', False):
                 data['required'].append(name)
 
-            data_type, data_format = get_data_type(field) or ('string', 'string')
+            field_meta = fields_meta.pop(name, {})
+
+            if 'type' in field_meta:
+                data_type, data_format = field_meta['type']
+            else:
+                data_type, data_format = get_data_type(field)
+
             if data_type == 'hidden':
                 continue
-
-            # guess format
-            # data_format = 'string'
-            # if data_type in BaseMethodIntrospector.PRIMITIVES:
-                # data_format = BaseMethodIntrospector.PRIMITIVES.get(data_type)[0]
 
             description = getattr(field, 'help_text', '')
             if not description or description.strip() == '':
@@ -381,5 +387,10 @@ class DocumentationGenerator(object):
 
             # memorize discovered field
             data['fields'][name] = f
+
+        if fields_meta:
+            raise ValueError(
+                'Unexpected fields in Swagger metadata: %s' % ','.join(fields_meta.keys()),
+            )
 
         return data
