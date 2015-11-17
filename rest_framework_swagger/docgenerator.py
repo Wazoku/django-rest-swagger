@@ -324,6 +324,13 @@ class DocumentationGenerator(object):
                 continue
 
             description = getattr(field, 'help_text', '')
+
+            if getattr(field, 'is_includable', False):
+                if description is None:
+                    description = ''
+
+                description = '<font color="#600">[includable]</font> ' + description
+
             if not description or description.strip() == '':
                 description = None
             f = {
