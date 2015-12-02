@@ -18,27 +18,30 @@ DEFAULT_SWAGGER_SETTINGS = {
     'version_resolver': 'rest_framework_swagger.fake_version_resolver',
 }
 
-from django.conf import settings
-from django.test.signals import setting_changed
+try:
+    from django.conf import settings
+    from django.test.signals import setting_changed
 
-def load_settings(provided_settings):
-    global SWAGGER_SETTINGS
-    SWAGGER_SETTINGS = provided_settings
+    def load_settings(provided_settings):
+        global SWAGGER_SETTINGS
+        SWAGGER_SETTINGS = provided_settings
 
-    for key, value in DEFAULT_SWAGGER_SETTINGS.items():
-        if key not in SWAGGER_SETTINGS:
-            SWAGGER_SETTINGS[key] = value
+        for key, value in DEFAULT_SWAGGER_SETTINGS.items():
+            if key not in SWAGGER_SETTINGS:
+                SWAGGER_SETTINGS[key] = value
 
-def reload_settings(*args, **kwargs):
-    setting, value = kwargs['setting'], kwargs['value']
-    if setting == 'SWAGGER_SETTINGS':
-        load_settings(value)
+    def reload_settings(*args, **kwargs):
+        setting, value = kwargs['setting'], kwargs['value']
+        if setting == 'SWAGGER_SETTINGS':
+            load_settings(value)
 
-load_settings(getattr(settings,
-                      'SWAGGER_SETTINGS',
-                      DEFAULT_SWAGGER_SETTINGS))
-setting_changed.connect(reload_settings)
-
+    load_settings(getattr(settings,
+                          'SWAGGER_SETTINGS',
+                          DEFAULT_SWAGGER_SETTINGS))
+    setting_changed.connect(reload_settings)
+    
+except:
+    SWAGGER_SETTINGS = DEFAULT_SWAGGER_SETTINGS
 
 class FakeVersionResolver(object):
     @staticmethod

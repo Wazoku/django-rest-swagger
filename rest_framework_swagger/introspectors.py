@@ -369,7 +369,7 @@ class BaseMethodIntrospector(object):
         if query_params:
             params += query_params
 
-        return params
+        return sorted(params, key=lambda x: x.get('name'))
 
     def get_http_method(self):
         return self.method
@@ -440,7 +440,7 @@ class BaseMethodIntrospector(object):
 
         params += get_class_form_args(self.method, self.callback, self.version)
 
-        return sorted(params, key=lambda x: x.get('name'))
+        return params
 
     def build_query_parameters_from_django_filters(self):
         """
