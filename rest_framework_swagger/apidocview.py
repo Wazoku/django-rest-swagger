@@ -1,4 +1,6 @@
 from django.utils import six
+from django.http import Http404
+
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.views import APIView
 
@@ -12,6 +14,19 @@ class APIDocView(APIView):
         self.host = request.build_absolute_uri()
         self.api_path = SWAGGER_SETTINGS['api_path']
         self.api_full_uri = request.build_absolute_uri(self.api_path)
+
+        self.version_resolver = import_string(SWAGGER_SETTINGS['version_resolver'])
+        self.version = kwargs.get('version')
+        if self.version:
+            self.version = self.version_resolver.parse_version_string(self.version)
+
+            # Check version is available
+            if self.version not in self.version_resolver.available_versions:
+                self.version = None
+
+        if not self.version:
+            raise Http404
+
         return super(APIDocView, self).initial(request, *args, **kwargs)
 
     def get_permission_class(self, request):

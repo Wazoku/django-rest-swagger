@@ -7,7 +7,6 @@ import itertools
 import re
 import yaml
 import importlib
-from collections import OrderedDict
 
 from .compat import OrderedDict, strip_tags, get_pagination_attribures
 from abc import ABCMeta, abstractmethod
@@ -31,6 +30,8 @@ try:
     import django_filters
 except ImportError:
     django_filters = None
+
+from .public_api_introspectors import get_class_form_args
 
 
 def get_view_description(view_cls, html=False, docstring=None):
@@ -172,11 +173,12 @@ class IntrospectorHelper(object):
 class BaseViewIntrospector(object):
     __metaclass__ = ABCMeta
 
-    def __init__(self, callback, path, pattern, user):
+    def __init__(self, callback, path, pattern, user, version=None):
         self.callback = callback
         self.path = path
         self.pattern = pattern
         self.user = user
+        self.version = version
 
     def get_yaml_parser(self):
         parser = YAMLDocstringParser(self)
@@ -214,12 +216,13 @@ class BaseMethodIntrospector(object):
         'boolean': ['boolean'],
     }
 
-    def __init__(self, view_introspector, method):
+    def __init__(self, view_introspector, method, version=None):
         self.method = method
         self.parent = view_introspector
         self.callback = view_introspector.callback
         self.path = view_introspector.path
         self.user = view_introspector.user
+        self.version = version
 
     def get_module(self):
         return self.callback.__module__
@@ -260,7 +263,8 @@ class BaseMethodIntrospector(object):
                 try:
                     serializer_class = view.get_serializer_class()
                 except AssertionError as e:
-                    if "should either include a `serializer_class` attribute, or override the `get_serializer_class()` method." in str(e):  # noqa
+                    if ( "should either include a `serializer_class` attribute, or override the `get_serializer_class()` method." in str(e) or
+                        '`serializer_class` is not set' in str(e)):  # noqa
                         serializer_class = None
                     else:
                         raise
@@ -275,6 +279,7 @@ class BaseMethodIntrospector(object):
         view.request = HttpRequest()
         view.request.user = self.user
         view.request.method = self.method
+        view.request.version = self.version
         return view
 
     def get_serializer_class(self):
@@ -433,7 +438,9 @@ class BaseMethodIntrospector(object):
                                'description': param[1].strip(),
                                'type': 'string'})
 
-        return params
+        params += get_class_form_args(self.method, self.callback, self.version)
+
+        return sorted(params, key=lambda x: x.get('name'))
 
     def build_query_parameters_from_django_filters(self):
         """
@@ -549,7 +556,7 @@ def get_data_type(field):
 class APIViewIntrospector(BaseViewIntrospector):
     def __iter__(self):
         for method in self.methods():
-            yield APIViewMethodIntrospector(self, method)
+            yield APIViewMethodIntrospector(self, method, version=self.version)
 
     def methods(self):
         return self.callback().allowed_methods
@@ -558,7 +565,11 @@ class APIViewIntrospector(BaseViewIntrospector):
 class WrappedAPIViewIntrospector(BaseViewIntrospector):
     def __iter__(self):
         for method in self.methods():
-            yield WrappedAPIViewMethodIntrospector(self, method)
+            yield WrappedAPIViewMethodIntrospector(
+                self,
+                method,
+                version=self.version,
+            )
 
     def methods(self):
         return self.callback().allowed_methods
@@ -616,8 +627,14 @@ class WrappedAPIViewMethodIntrospector(BaseMethodIntrospector):
 class ViewSetIntrospector(BaseViewIntrospector):
     """Handle ViewSet introspection."""
 
-    def __init__(self, callback, path, pattern, user, patterns=None):
-        super(ViewSetIntrospector, self).__init__(callback, path, pattern, user)
+    def __init__(self, callback, path, pattern, user, patterns=None, version=None):
+        super(ViewSetIntrospector, self).__init__(
+            callback,
+            path,
+            pattern,
+            user,
+            version=version,
+        )
         if not issubclass(callback, viewsets.ViewSetMixin):
             raise Exception("wrong callback passed to ViewSetIntrospector")
         self.patterns = patterns or [pattern]
@@ -625,7 +642,12 @@ class ViewSetIntrospector(BaseViewIntrospector):
     def __iter__(self):
         methods = self._resolve_methods()
         for method in methods:
-            yield ViewSetMethodIntrospector(self, methods[method], method)
+            yield ViewSetMethodIntrospector(
+                self,
+                methods[method],
+                method,
+                version=self.version,
+            )
 
     def methods(self):
         stuff = []
@@ -658,9 +680,9 @@ class ViewSetIntrospector(BaseViewIntrospector):
 
 
 class ViewSetMethodIntrospector(BaseMethodIntrospector):
-    def __init__(self, view_introspector, method, http_method):
+    def __init__(self, view_introspector, method, http_method, version=None):
         super(ViewSetMethodIntrospector, self) \
-            .__init__(view_introspector, method)
+            .__init__(view_introspector, method, version=version)
         self.http_method = http_method.upper()
 
     def get_http_method(self):

@@ -29,10 +29,12 @@ class DocumentationGenerator(object):
     # Response classes defined in docstrings
     explicit_response_types = dict()
 
-    def __init__(self, for_user=None):
+    def __init__(self, for_user=None, version=None):
 
         # unauthenticated user is expected to be in the form 'module.submodule.Class' if a value is present
         unauthenticated_user = SWAGGER_SETTINGS.get('unauthenticated_user')
+
+        self.version = version
 
         # attempt to load unathenticated_user class from settings if a user is not supplied
         if not for_user and unauthenticated_user:
@@ -61,13 +63,32 @@ class DocumentationGenerator(object):
         pattern = api['pattern']
         callback = api['callback']
         if callback.__module__ == 'rest_framework.decorators':
-            return WrappedAPIViewIntrospector(callback, path, pattern, self.user)
+            return WrappedAPIViewIntrospector(
+                callback,
+                path,
+                pattern,
+                self.user,
+                version=self.version,
+            )
         elif issubclass(callback, viewsets.ViewSetMixin):
             patterns = [a['pattern'] for a in apis
                         if a['callback'] == callback]
-            return ViewSetIntrospector(callback, path, pattern, self.user, patterns=patterns)
+            return ViewSetIntrospector(
+                callback,
+                path,
+                pattern,
+                self.user,
+                patterns=patterns,
+                version=self.version,
+            )
         else:
-            return APIViewIntrospector(callback, path, pattern, self.user)
+            return APIViewIntrospector(
+                callback,
+                path,
+                pattern,
+                self.user,
+                version=self.version,
+            )
 
     def get_operations(self, api, apis=None):
         """

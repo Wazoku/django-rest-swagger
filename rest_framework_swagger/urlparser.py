@@ -13,8 +13,8 @@ from .apidocview import APIDocView
 
 
 class UrlParser(object):
-
-    def get_apis(self, patterns=None, urlconf=None, filter_path=None, exclude_namespaces=[]):
+    def get_apis(self, patterns=None, urlconf=None, filter_path=None,
+                 exclude_namespaces=[], version=None):
         """
         Returns all the DRF APIViews found in the project URLs
 
@@ -36,7 +36,11 @@ class UrlParser(object):
             filter_path=filter_path,
             exclude_namespaces=exclude_namespaces,
         )
-        if filter_path is not None:
+
+        if filter_path is None and version:
+            filter_path = 'api/v%s.%s/' % version
+
+        if filter_path:
             return self.get_filtered_apis(apis, filter_path)
 
         return apis
@@ -106,7 +110,12 @@ class UrlParser(object):
         if callback is None or self.__exclude_router_api_root__(callback):
             return
 
-        path = simplify_regex(prefix + pattern.regex.pattern)
+        # Ugly hack to get version from regex
+        regex_path = prefix + pattern.regex.pattern
+        regex_path = regex_path.replace(r'(\.0)?', r'\.0')
+        regex_path = re.sub(r'v\(\?P\<version\>(\d+\\\.\d+)\)', r'v\1', regex_path)
+
+        path = simplify_regex(regex_path)
 
         if filter_path is not None:
             if re.match('^/?%s(/.*)?$' % re.escape(filter_path), path) is None:
@@ -123,7 +132,8 @@ class UrlParser(object):
             'callback': callback,
         }
 
-    def __flatten_patterns_tree__(self, patterns, prefix='', filter_path=None, exclude_namespaces=[]):
+    def __flatten_patterns_tree__(self, patterns, prefix='', filter_path=None,
+                                  exclude_namespaces=[]):
         """
         Uses recursion to flatten url tree.
 
@@ -134,7 +144,11 @@ class UrlParser(object):
 
         for pattern in patterns:
             if isinstance(pattern, RegexURLPattern):
-                endpoint_data = self.__assemble_endpoint_data__(pattern, prefix, filter_path=filter_path)
+                endpoint_data = self.__assemble_endpoint_data__(
+                    pattern,
+                    prefix,
+                    filter_path=filter_path,
+                )
 
                 if endpoint_data is None:
                     continue
