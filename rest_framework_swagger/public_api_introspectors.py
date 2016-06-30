@@ -29,13 +29,14 @@ def get_class_form_args(method, view_class, version):
     if not isinstance(form_classes, list):
         form_classes = [form_classes]
 
-    forms = [_version_resolver.get_form(version, f) for f in form_classes]
+    forms = [_version_resolver.get_form(version, f) for f in form_classes if f]
+
+    forms = [f for f in forms if getattr(f, 'source', None) != 'path']
 
     for form in forms:
         params += _process_form(form)
 
     return params
-
 
 
 def _split_docstring(docstring):

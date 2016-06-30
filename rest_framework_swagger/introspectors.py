@@ -120,8 +120,6 @@ class IntrospectorHelper(object):
 
         return data
 
-
-
     @staticmethod
     def get_metadata(serializer):
         if isinstance(serializer, ListSerializer):
@@ -151,7 +149,6 @@ class IntrospectorHelper(object):
         meta = IntrospectorHelper.get_metadata(serializer)
 
         return serializer.__class__.__name__
-
 
     @staticmethod
     def get_summary(callback, docstring=None):
@@ -351,7 +348,7 @@ class BaseMethodIntrospector(object):
         params = []
         path_params = self.build_path_parameters()
         body_params = self.build_body_parameters()
-        form_params = self.build_form_parameters()
+        # form_params = self.build_form_parameters()
         query_params = self.build_query_parameters()
         if django_filters is not None:
             query_params.extend(
@@ -360,11 +357,12 @@ class BaseMethodIntrospector(object):
         if path_params:
             params += path_params
 
-        if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
-            params += form_params
-
-            if not form_params and body_params is not None:
-                params.append(body_params)
+        # We never use serializers to directly modify data in Public-API
+        # if self.get_http_method() not in ["GET", "DELETE", "HEAD"]:
+        #     params += form_params
+        #
+        #     if not form_params and body_params is not None:
+        #         params.append(body_params)
 
         if query_params:
             params += query_params

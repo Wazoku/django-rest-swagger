@@ -105,6 +105,20 @@ class DocumentationGenerator(object):
                     method_introspector.get_http_method() == "OPTIONS":
                 continue  # No one cares. I impose JSON.
 
+            version_checker = getattr(
+                method_introspector.callback,
+                'is_version_allowed',
+            )
+            if (
+                version_checker
+                and not version_checker(
+                    method_introspector.method,
+                    method_introspector.version,
+                )
+            ):
+                # This version is not available for this HTTP method
+                continue
+
             doc_parser = method_introspector.get_yaml_parser()
 
             serializer = self._get_method_serializer(method_introspector)
