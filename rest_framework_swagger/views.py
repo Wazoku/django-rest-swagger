@@ -1,14 +1,14 @@
 import json
-from django.utils import six
 
-from django.views.generic import View
-from django.utils.safestring import mark_safe
-from django.utils.encoding import smart_text
-from django.shortcuts import render_to_response, RequestContext
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import redirect
 from django.core.urlresolvers import reverse
-from .compat import import_string
+from django.http import HttpResponse
+from django.shortcuts import redirect
+from django.template import loader
+from django.utils import six
+from django.utils.encoding import smart_text
+from django.utils.safestring import mark_safe
+from django.views.generic import View
 
 from rest_framework.views import Response
 from rest_framework.settings import api_settings
@@ -20,6 +20,7 @@ from rest_framework_swagger.docgenerator import DocumentationGenerator
 
 import rest_framework_swagger as rfs
 
+from .compat import import_string
 
 try:
     JSONRenderer = list(filter(
@@ -105,12 +106,10 @@ class SwaggerUIView(View):
             'version': version_string,
             'available_versions': available_versions,
         }
-        response = render_to_response(
-            template_name,
-            RequestContext(request, data),
-        )
 
-        return response
+        content = loader.render_to_string(template_name, context=data, request=request)
+
+        return HttpResponse(content)
 
     def has_permission(self, request):
         if rfs.SWAGGER_SETTINGS.get('is_superuser') and \
