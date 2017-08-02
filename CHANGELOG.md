@@ -1,5 +1,10 @@
 ## Release Notes:
 
+### v0.3.5 (August 2, 2017)
+* Django 1.8+ support
+* Public API versioning support
+* Supporting includable fields
+
 ### v0.3.4 (August 19, 2015)
 * prepare CurrentUserDefault better
 * fix throbber url
