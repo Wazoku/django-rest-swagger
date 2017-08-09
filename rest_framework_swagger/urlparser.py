@@ -1,18 +1,42 @@
-import re
 import os
+import re
 from importlib import import_module
 
 from django.conf import settings
+from django.core.urlresolvers import RegexURLPattern, RegexURLResolver
 from django.utils import six
-from django.core.urlresolvers import RegexURLResolver, RegexURLPattern
-from django.contrib.admindocs.views import simplify_regex
-
 from rest_framework.views import APIView
 
 from .apidocview import APIDocView
 
+# The following simplify_regex is taken from Django 1.10 admindocs
+# https://github.com/django/django/blob/1.10/django/contrib/admindocs/views.py
+named_group_matcher = re.compile(r'\(\?P(<\w+>).+?\)')
+non_named_group_matcher = re.compile(r'\(.*?\)')
+
+
+def simplify_regex(pattern):
+    """
+    Clean up urlpattern regexes into something somewhat readable by Mere Humans:
+    turns something like "^(?P<sport_slug>\w+)/athletes/(?P<athlete_slug>\w+)/$"
+    into "<sport_slug>/athletes/<athlete_slug>/"
+    """
+    # handle named groups first
+    pattern = named_group_matcher.sub(lambda m: m.group(1), pattern)
+
+    # handle non-named groups
+    pattern = non_named_group_matcher.sub("<var>", pattern)
+
+    # clean up any outstanding regex-y characters.
+    pattern = pattern.replace('^', '').replace('$', '').replace(
+        '?', '').replace('//', '/').replace('\\', '')
+    if not pattern.startswith('/'):
+        pattern = '/' + pattern
+    return pattern
+
 
 class UrlParser(object):
+
     def get_apis(self, patterns=None, urlconf=None, filter_path=None,
                  exclude_namespaces=[], version=None):
         """
