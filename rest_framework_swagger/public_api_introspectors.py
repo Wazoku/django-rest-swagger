@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals
+
 import rest_framework_swagger as rfs
-from .compat import import_string
 from formencode.api import NoDefault
+
+from .compat import import_string
 
 _version_resolver = None
 
@@ -54,13 +56,13 @@ def _split_docstring(docstring):
 
 
 FIELD_TYPE_MAP = {
-    b'Number': b'integer',
-    b'StringBool': b'boolean',
-    b'JSONValidator': b'json',
-    b'Set': b'list',
-    b'URL': b'url',
-    b'OneOf': b'choice',
-    b'OrderingValidator': b'choice',
+    'Number': 'integer',
+    'StringBool': 'boolean',
+    'JSONValidator': 'json',
+    'Set': 'list',
+    'URL': 'url',
+    'OneOf': 'choice',
+    'OrderingValidator': 'choice',
 }
 
 
@@ -73,18 +75,18 @@ def _update_description(field_info, to_add):
 def get_field_specific_data(field_info, field):
     field_class_name = field.__class__.__name__
 
-    if field_class_name == b'OneOf':
-        field_info[b'enum'] = field.list
+    if field_class_name == 'OneOf':
+        field_info['enum'] = field.list
 
-    elif field_class_name == b'OrderingValidator':
+    elif field_class_name == 'OrderingValidator':
         options = []
         for item in field.options:
             options.append(item)
             options.append('-' + item)
 
-        field_info[b'enum'] = options
+        field_info['enum'] = options
 
-    elif field_class_name == b'CommaSeparatedSet':
+    elif field_class_name == 'CommaSeparatedSet':
         _update_description(
             field_info,
             'Acceptable values: {%s}' % ', '.join(field.allowed_values),
@@ -92,14 +94,14 @@ def get_field_specific_data(field_info, field):
 
 
 def _get_field_type(field):
-    return FIELD_TYPE_MAP.get(field.__class__.__name__, b'string')
+    return FIELD_TYPE_MAP.get(field.__class__.__name__, 'string')
 
 
 def _get_field_description(field):
-    if hasattr(field, b'get_description'):
+    if hasattr(field, 'get_description'):
         return field.get_description()
 
-    return field.description or getattr(field, b'default_description', '')
+    return field.description or getattr(field, 'default_description', '')
 
 
 def _get_default_value(field):
@@ -112,19 +114,19 @@ def _get_default_value(field):
 def _process_form(form):
     params = []
 
-    for field_name, field in form.fields.iteritems():
+    for field_name, field in form.fields.items():
         field_info = {
-            b'name': field_name,
-            b'description': _get_field_description(field),
-            b'required': field.if_missing is NoDefault,
-            b'type': _get_field_type(field),
-            b'paramType': b'query' if form.source == b'GET' else b'form',
+            'name': field_name,
+            'description': _get_field_description(field),
+            'required': field.if_missing is NoDefault,
+            'type': _get_field_type(field),
+            'paramType': 'query' if form.source == 'GET' else 'form',
         }
 
         default_value = _get_default_value(field)
         if default_value:
             # None is not allowed here
-            field_info[b'defaultValue'] = default_value
+            field_info['defaultValue'] = default_value
 
         get_field_specific_data(field_info, field)
 

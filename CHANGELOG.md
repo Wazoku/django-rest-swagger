@@ -1,5 +1,11 @@
 ## Release Notes:
 
+### v0.3.7 (Sept 8, 2017)
+* Python 3 support
+
+### v0.3.6 (August 9, 2017)
+* Django 1.11 support
+
 ### v0.3.5 (August 2, 2017)
 * Django 1.8+ support
 * Public API versioning support
@@ -19,7 +25,7 @@
 
 ### v0.3.1 (June 4, 2015)
 * add settings overrides for api urls
-* allow bash command "long options" in notes 
+* allow bash command "long options" in notes
 
 ### v0.3.0 (May 14, 2015)
 * fixes for DRF 3.1.1
@@ -56,7 +62,7 @@
 * add `token_type` to settings
 
 ### v0.2.1 (November 15, 2014)
-* add readthedocs based documentation 
+* add readthedocs based documentation
 * add request and response serializer spec to yaml
 * preserve order of fields in serializers
 * support nested serializers

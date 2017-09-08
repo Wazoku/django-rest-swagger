@@ -2,36 +2,37 @@
 
 """Handles the instrospection of REST Framework Views and ViewSets."""
 
+import importlib
 import inspect
 import itertools
 import re
-import yaml
-import importlib
-
-from .compat import OrderedDict, strip_tags, get_pagination_attribures
 from abc import ABCMeta, abstractmethod
 
-from django.http import HttpRequest
-from django.contrib.admindocs.utils import trim_docstring
-from django.utils.encoding import smart_text
+import yaml
 
 import rest_framework
-from rest_framework import viewsets, fields
+from django.contrib.admindocs.utils import trim_docstring
+from django.http import HttpRequest
+from django.utils import six
+from django.utils.encoding import smart_text
+from rest_framework import fields, viewsets
 from rest_framework.compat import apply_markdown
 from rest_framework.serializers import ListSerializer
+from rest_framework.utils import formatting
+
+from .compat import OrderedDict, get_pagination_attribures, strip_tags
+from .public_api_introspectors import get_class_form_args
+
 try:
     from rest_framework.fields import CurrentUserDefault
 except ImportError:
     # FIXME once we drop support of DRF 2.x .
     CurrentUserDefault = None
-from rest_framework.utils import formatting
-from django.utils import six
 try:
     import django_filters
 except ImportError:
     django_filters = None
 
-from .public_api_introspectors import get_class_form_args
 
 
 def get_view_description(view_cls, html=False, docstring=None):
@@ -115,7 +116,7 @@ class IntrospectorHelper(object):
 
         data.setdefault('fields', {})
 
-        for field_name, value in extends.get('fields', {}).iteritems():
+        for field_name, value in extends.get('fields', {}).items():
             data['fields'].setdefault(field_name, value)
 
         return data
@@ -260,7 +261,7 @@ class BaseMethodIntrospector(object):
                 try:
                     serializer_class = view.get_serializer_class()
                 except AssertionError as e:
-                    if ( "should either include a `serializer_class` attribute, or override the `get_serializer_class()` method." in str(e) or
+                    if ("should either include a `serializer_class` attribute, or override the `get_serializer_class()` method." in str(e) or
                         '`serializer_class` is not set' in str(e)):  # noqa
                         serializer_class = None
                     else:
@@ -544,7 +545,7 @@ DATA_TYPES_MAP = OrderedDict([
 
 
 def get_data_type(field):
-    for field_class, repreentation in DATA_TYPES_MAP.iteritems():
+    for field_class, repreentation in DATA_TYPES_MAP.items():
         if isinstance(field, field_class):
             return repreentation
 
@@ -705,7 +706,8 @@ class ViewSetMethodIntrospector(BaseMethodIntrospector):
         parameters = super(ViewSetMethodIntrospector, self) \
             .build_query_parameters()
         view = self.create_view()
-        page_size, page_query_param, page_size_query_param = get_pagination_attribures(view)
+        page_size, page_query_param, page_size_query_param = get_pagination_attribures(
+            view)
         if self.method == 'list' and page_size:
             data_type = 'integer'
             if page_query_param:
